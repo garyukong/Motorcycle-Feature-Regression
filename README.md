@@ -1,26 +1,51 @@
-# lab_2
+# Predicting Customer Approval of Motorcycles
 
-The final project for MIDS w203. In this lab, students will apply what they have learned about building linear models to produce a report that analyzes a specific research question. 
+## Introduction
 
-# Assignment Prompt
+This project focuses on analyzing key features that influence customer approval of motorcycles, leveraging data from Bikez.com. By exploring the impact of features such as engine responsiveness (torque) and fuel capacity, we aim to provide insights that can guide motorcycle manufacturers in product design to enhance customer satisfaction.
 
-The assignment prompt is in `./assignment.Rmd` and rendered in `./assignment.pdf`. 
+## Goals
 
-# Project Organization
+- To quantify the impact of motorcycle engine responsiveness and fuel capacity on customer approval.
+- To evaluate the predictive power of various motorcycle features on customer approval ratings.
+- To assist motorcycle manufacturers in making data-driven decisions regarding product design.
 
-We have created a folder structure to help you organize your work. This is based on [cookiecutter data science](https://drivendata.github.io/cookiecutter-data-science).
+## Dataset
 
+The dataset includes specifications for 38,472 motorcycles, sourced from Bikez.com. It features 28 unique attributes for each motorcycle, including brand, model, and year, with the main variables of interest being torque and fuel capacity.
+
+### Source:
+- Bikez.com, accessed on 30 April 2022.
+
+## Methodology
+
+1. **Data Preprocessing**: Selection and cleaning of the dataset to focus on motorcycles from the years 2013 to 2022, resulting in 1,135 observations after removing entries with missing values.
+2. **Feature Engineering**: Analysis of variables such as torque, fuel capacity, and motorcycle category to define their roles in customer approval.
+3. **Model Development**: Construction of regression models to identify significant predictors of customer approval.
+4. **Evaluation**: Assessment of model performance through R-squared values and statistical significance of predictors.
+
+## Results
+
+The analysis revealed that torque and fuel capacity significantly affect customer approval ratings. The study also highlighted the importance of motorcycle category in predicting customer approval, with different categories impacting ratings to varying degrees.
+
+## Usage
+
+To replicate the analysis:
+1. Clone the repository.
+2. Update the filepath in the 
+3. Run the analysis notebooks located in the `notebooks/` directory.
+
+## Future Work
+
+Future research could explore the interaction between motorcycle categories and key design features, incorporate simplified versions of currently excluded categorical variables, and utilize additional datasets like sales data for a more comprehensive understanding of motorcycle success factors.
+
+## Project Organization
 
     ├── LICENSE
-    ├── README.md          <- The top-level README describing the project aims
+    ├── README.md          
     ├── data
-    │   ├── external       <- Data from third party sources.
+    │   ├── raw            <- Original Bikez.com data used for analysis.
     │   ├── interim        <- Intermediate data that has been transformed.
     │   └── processed      <- The final, canonical data sets for modeling.
     ├── notebooks          <- .Rmd notebooks. 
-    ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-    ├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-    └── src                <- Source code for use in this project.
-        └── data           <- Scripts to download or generate data
-
-
+    └── reports            <- Generated analysis as PDF.

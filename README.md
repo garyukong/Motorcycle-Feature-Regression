@@ -48,4 +48,4 @@ Future research could explore the interaction between motorcycle categories and 
     │   ├── interim        <- Intermediate data that has been transformed.
     │   └── processed      <- The final, canonical data sets for modeling.
     ├── notebooks          <- .Rmd notebooks. 
-    └── reports            <- Generated analysis as PDF.
+    └── reports            <- Generated analysis as PDF and latex format.

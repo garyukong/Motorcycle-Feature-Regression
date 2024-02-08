@@ -1,0 +1,575 @@
+---
+title: "Predicting Customer Approval of Motorcycles"
+subtitle: "W203 Lab 2 Report"
+author: "Amina Alavi, Gary Kong, Vernon Robinson, Elizabeth Willard"
+output: 
+  bookdown::pdf_document2:
+    latex_engine: xelatex
+    extra_dependencies: "subfig"
+    fig.caption: yes
+    keep_tex: yes
+header-includes:
+ \usepackage{wrapfig}
+ \usepackage{float}
+ \usepackage{dcolumn}
+ \usepackage{amsmath}
+ \usepackage{array}
+ \usepackage{amsfonts}
+ \floatplacement{figure}{H}
+editor_options: 
+  markdown: 
+    wrap: 72
+geometry: margin = 0.6in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(dplyr)
+library(stargazer)
+library(lmtest)
+library(ggplot2)
+library(tidyverse)
+library(magrittr)
+library(sandwich)
+library(corrplot)
+library(tinytex)
+library("GGally")
+```
+
+```{=tex}
+\newpage
+\setcounter{page}{1}
+```
+```{r import dataset}
+df <- read.csv("../data/raw/all_bikez_curated.csv")
+n_00_raw = nrow(df)
+```
+
+```{r filter data to 2013-2022}
+df = filter(df, df$Year >= 2013)
+n_00_yearclean = nrow(df)
+```
+
+# Introduction
+
+Motorcycle manufacturers face several key challenges in the current
+global motorcycle market. The market is highly competitive, with
+`r n_distinct(df$Brand)` distinct brands and `r n_distinct(df$Model)`
+models in bikez.com's 2013 - 22 database of motorcycles. Meanwhile, easy
+access to information makes customers more discriminating in purchasing
+decisions. Therefore, there is a need to design products in a
+data-driven way to satisfy customer preferences.
+
+Many different aspects of product design could impact how well a
+motorcycle is received by customers. These include, but are not limited
+to, motorcycle category, engine responsiveness, transmission, handling,
+suspension, and styling. Nonetheless, engine responsiveness is one of
+the most important features customers look for. This analysis provides a
+starting point toward understanding how engine responsiveness impacts
+customer acceptance by asking the following research question:
+
+```{=tex}
+\begin{quote}
+  \textit{How does motorcycle engine responsiveness impact customer approval?}
+\end{quote}
+```
+The answer to this question could help quantify how engine
+responsiveness impacts customer approval, especially compared to other
+features. Insights from our analysis are particularly relevant to
+product design teams, who can use this information to focus on designing
+products with features more likely to satisfy customer preferences.
+Investors may also use the outcomes of this research to better predict a
+given motorcycle's success.
+
+# Data and Methodology
+
+The data in this study came from bikez.com, which provides high-quality
+motorcycle specification data from 1894 to 2022. A custom scraper
+extracted the data on 30 April 2022 to enrich an existing used
+motorcycle dataset for a Kaggle hackathon competition. It was compiled
+and made publicly available by Emmanuel F. Werr. The observational data
+includes 28 unique features that describe a given motorcycle. The data
+source is a .CSV file containing information of 38,472 motorcycles, each
+row representing a motorcycle (based on brand, model, and year
+combination).
+
+To operationalize our Y concept of customer approval, we used the
+*rating* variable, a mean of customer review scores (1-5 scale). Rating
+is a strong proxy for customer approval as it directly quantifies how
+well-received a motorcycle is by customers. Customers' individual
+ratings are ordinal but can be treated as interval due to equal
+differences between categories. Also, the rating variable in the dataset
+is metric as it is an aggregated mean of individual ratings.
+
+To operationalize our X concept of engine responsiveness, we used the
+*torque* variable, which captures maximum torque in Newton-meters (Nm).
+The higher the torque, the faster the bike accelerates. Torque is one of
+the most important parameters that determine the responsiveness of a
+motorbike. We included *category*, *wheelbase*, *cooling system*, *front
+brakes*, *transmission type*, and *year* as secondary X variables.
+
+```{r remove rows with missing values for variables of interest}
+df <- na.omit(df, cols="Rating")
+df <- filter(df, df$Rating > 0 & df$Rating <=5)
+n_01_ratingclean = nrow(df)
+
+df <- na.omit(df, cols="Power")
+df <- filter(df, df$Torque..Nm. > 0)
+n_02_powertorqueclean = nrow(df)
+
+df <- na.omit(df, df$Fuel.capacity..lts.)
+n_03_fuelcapacityclean = nrow(df)
+
+df <- na.omit(df, df$Dry.weight..kg.)
+n_04_dryweightclean = nrow(df)
+
+df <- na.omit(df, df$Wheelbase..mm.)
+n_05_wheelbaseclean = nrow(df)
+
+df <- na.omit(df, df$Seat.height..mm.)
+n_06_seatheightclean = nrow(df)
+
+df <- filter(df, df$Cooling.system != "")
+n_07_coolingsystemclean = nrow(df)
+
+df <- filter(df, df$Front.brakes != "")
+n_08_frontbrakesclean = nrow(df)
+
+df <- filter(df, df$Transmission.type != "")
+n_09_transmissionclean = nrow(df)
+
+df <- filter(df, df$Category != "")
+n_10_categoryclean = nrow(df)
+```
+
+The raw dataset includes `r n_00_raw` motorcycles. We limited the
+dataset to motorcycles with a *year* between 2013 - 22, which leaves
+`r n_00_yearclean` observations. We removed observations with missing
+values for any of our operationalization variables. First, we removed
+motorcycles with missing *rating* values, which leaves
+`r n_01_ratingclean` observations. No motorcycles had missing values for
+*torque*, *fuel capacity* and *wheelbase*. Second, we removed
+motorcycles with missing *cooling system* values, which leaves
+`r n_07_coolingsystemclean` observations. Third, we removed motorcycles
+with missing *front brake* values, which leaves
+`r n_08_frontbrakesclean` observations. Fourth, we removed motorcycles
+with missing *transmission type* values, which leaves
+`r n_09_transmissionclean` observations.
+
+```{r clean categorical variables, results='hide'}
+# Clean "Cooling System"
+
+## Save Ns for each category
+n_coolingsystem = data.frame(table(df$Cooling.system))
+n_coolingsystem_air = n_coolingsystem[n_coolingsystem$Var1=='Air',2]
+n_coolingsystem_liquid = n_coolingsystem[n_coolingsystem$Var1=='Liquid',2]
+n_coolingsystem_oilair = n_coolingsystem[n_coolingsystem$Var1=='Oil & air',2]
+
+## Recode to two categories
+df <- mutate(df,Cooling.system = case_when(Cooling.system == "Liquid" ~ "Liquid",
+                                           Cooling.system == "Air" | Cooling.system == "Oil & air" ~ "Air/Oil & Air"))
+
+n_11_coolingsystemclean = nrow(df)
+
+# Clean "Front Brakes"
+## Extract initial characters
+df$Front.brakes <- str_extract(df$Front.brakes, "^[aA-zZ]+ [aA-zZ]+")
+
+## Save Ns for each category
+n_frontbrakes = data.frame(table(df$Front.brakes))
+n_frontbrakes_doubledisc = n_frontbrakes[n_frontbrakes$Var1=='Double disc',2]
+n_frontbrakes_expandingbrake = n_frontbrakes[n_frontbrakes$Var1=='Expanding brake',2]
+n_frontbrakes_singledisc = n_frontbrakes[n_frontbrakes$Var1=='Single disc',2]
+
+## Filter to only single disc and double disc
+df <- filter(df, df$Front.brakes == "Single disc" | df$Front.brakes == "Double disc")
+
+n_12_frontbrakeclean = nrow(df)
+
+# Clean "Transmission Type"
+## Save Ns for each category
+n_transmission = data.frame(table(df$Transmission.type))
+n_transmission_belt = n_transmission[n_transmission$Var1=='Belt',2]
+n_transmission_chain = n_transmission[n_transmission$Var1=='Chain',2]
+n_transmission_shaftdrive = n_transmission[n_transmission$Var1=='Shaft drive',2]
+
+## Filter to two categories
+df <- filter(df, df$Transmission.type == "Belt" | df$Transmission.type == "Chain")
+
+n_13_transmissionclean = nrow(df)
+
+# Clean "Category"
+# Get a summary of categories
+n_cat <- data.frame(table(df$Category))
+cat_distinct_preclean <- nrow(n_cat)
+
+# Filter out observations with small category
+df <- filter(df, !df$Category %in% c("Cross / motocross", "Minibike, cross", "Minibike, sport", "ATV", "Sport touring")) # Where N <= 30
+cat_distinct_postclean <- nrow(data.frame(table(df$Category)))
+
+n_14_categoryclean <- nrow(df)
+```
+
+We also manipulated four categorical variables (*cooling system*, *front
+brakes*, *transmission type*, and *category*), reducing the number of
+categories in each to simplify the model and facilitate model
+interpretation. For *cooling system*, we grouped similar categories
+(i.e., "Air" and "Oil & Air") together. For *front brakes*,
+*transmission type*, and *category*, we removed observations belonging
+to categories with a small number of Ns, which leaves
+`r n_14_categoryclean` observations.
+
+To choose X variables to include in our model, we initially conducted a
+correlation analysis of all continuous variables (see Figure
+\@ref(fig:side-by-side-plots)a). As the sample size after wrangling
+(n=`r n_14_categoryclean`) is not very large, we decided to not divide
+our data into exploratory and confirmation sets. We chose *torque* over
+*power* as the two are highly correlated (see Figure
+\@ref(fig:side-by-side-plots)a), since power is a function of torque and
+speed (RPM). Some variables (*bore, stroke*, *displacement*) had been
+excluded from our research at the outset due to concerns of correlation
+to *power* and *torque,* which is confirmed here. Excluding these highly
+correlated variables minimizes the risk of having outcome variables on
+the right-hand side. While we initially hypothesized that *seat height*
+could be an explanatory variable, we chose to omit it as there is no
+correlation between *seat height* and *rating*. Also, since *wheelbase*
+and *dry weight* are highly correlated, we dropped *dry weight* and kept
+*wheelbase*, which is itself less correlated to *torque*.
+
+```{r correlation-matrix, echo=FALSE, message=FALSE, include=FALSE, fig.width=10, fig.height=4}
+# Prepare dataframe containing only numeric variables
+num_cols <- unlist(lapply(df, is.numeric))
+df_num <- df[,num_cols]
+df_num = select(df_num, -Year)
+
+# Create correlation matrix
+matrix <- cor(df_num, method="pearson")
+data.frame(matrix)
+colnames(matrix) <- c("Rating", "Displacement", "Power", "Torque", "Bore", "Fuel Capacity", "Dry Weight", "Wheelbase", "Seat Height")
+rownames(matrix) <- c("Rating", "Displacement", "Power", "Torque", "Bore", "Fuel Capacity", "Dry Weight", "Wheelbase", "Seat Height")
+data.frame(matrix)
+```
+
+```{r pairwise-plots, echo=FALSE, message=FALSE, fig.width=10, fig.height=4}
+pair_plot <- ggpairs(df,
+                    columns = c("Torque..Nm.","Fuel.capacity..lts.", "Wheelbase..mm.", "Rating"),
+                    columnLabels = c("Torque", "Fuel Capacity", "Wheelbase", "Rating"),
+                    axisLabels = 'none',
+                    switch = 'y',
+                    aes(alpha=0.2)
+            )
+```
+
+```{r side-by-side-plots, echo=FALSE, message=FALSE, fig.show="hold", out.width="50%", fig.cap="Pearson Correlation of Continuous X Variables and Pairwise Plots of Continuous X and Y Variables", fig.subcap=c('Correlations', 'Pairwise Plots')}
+par(mar = c(4, 4, .1, .1))
+corrplot(
+  matrix,
+  method = 'color',
+  order ='AOE',
+  type ='lower',
+  diag = FALSE,
+  addCoef.col="grey",
+  tl.cex = 0.8,
+  number.cex=0.8
+  )
+pair_plot
+```
+
+The bottom three plots in Figure \@ref(fig:side-by-side-plots)b show
+*rating* as a function of *torque*, *fuel capacity*, and *wheelbase*.
+Notably, *rating* appears to increase as *torque* and *fuel capacity*
+increase, with moderate correlations between *fuel capacity* and
+*rating*, and *torque* and *rating*. In contrast, the relationship
+between *wheelbase* and *rating* appears less strong but is still
+significant. We chose to still include *wheelbase* as an X variable /
+covariate to reduce omitted variable bias.
+
+Several categorical X variables were intentionally excluded from our
+analysis to minimize complexity. *Fuel system*, *fuel control*, *front
+suspension*, *rear suspension*, *color options* had excessively large
+numbers of distinct categories, making them unsuitable for regression.
+*Rear brakes* was excluded as *front brakes* are considered more
+important. *Engine cylinder*, *engine stroke* and *gearbox* were
+excluded as categories were ordinal and correlated with *torque*, so
+inclusion would have led to outcome variables on right-hand side. Based
+on the above, we specified five models:
+
+```{r mean torque by categories, echo=FALSE, message=FALSE, include=FALSE}
+df %>% group_by(Engine.cylinder) %>% summarise(mean_torque=mean(Torque..Nm.))
+df %>% group_by(Engine.stroke) %>% summarise(mean_torque=mean(Torque..Nm.))
+df %>% group_by(Gearbox) %>% summarise(mean_torque=mean(Torque..Nm.))
+```
+
+**Model 1:** We wanted our first model to be simple and thus only used
+our primary X variable, *torque*, to predict *rating*, as exploratory
+plots show a linear relationship between the two variables. In this
+model, $\beta_1$ represents the change in *rating* for each unit
+increase in *torque* (all else kept constant). The model is:
+
+$$
+  \widehat{Rating}=\beta_0 + \beta_1\cdot Torque + \epsilon
+$$ **Model 2:** We included all shortlisted X variables to assess
+statistical significance and to minimize omitted variable bias. All
+$\beta$s (except $\beta_0$) represent change in *rating* for each unit
+change of the X variable (all else kept constant). The model is:
+
+```{=tex}
+\begin{equation}
+  \begin{aligned}
+      \widehat{Rating}=\beta_0 + \beta_1\cdot Torque +
+             \beta_2\cdot Fuel Capacity +
+               \beta_3\cdot Wheelbase + \\
+                 \beta_4\cdot Cooling System +
+                  \beta_5\cdot Front Breaks +
+                   \beta_6\cdot Transmission Type
+                      + \epsilon
+  \end{aligned}
+\end{equation}
+```
+**Model 3:** Initial data exploration suggested that *category* affects
+*rating*. Thus, we included *category* to improve model fit[^1]. Also,
+to simplify the model, we grouped all X variables with little
+significance under $\mathbf{Z}\boldsymbol{\gamma}$. $\mathbf{Z}$ is a
+row vector for the covariates and $\boldsymbol{\gamma}$ is a column
+vector of coefficients.
+
+[^1]: The categories are represented by i in the equation. Indicator
+    variables are "Classic", "Custom cruiser", "Enduro / offroad",
+    "Naked bike", "Scooter", "Sport", "Super motard", "Touring". The
+    baseline category is "All round".
+
+```{=tex}
+\begin{equation}
+  \begin{aligned}
+  \widehat{Rating}=\beta_0 + \beta_1\cdot Torque +
+           \beta_2\cdot Fuel Capacity +
+                  \beta_i\cdot Category_{i} +
+                   \mathbf{Z}\boldsymbol{\gamma}
+                    + \epsilon
+  \end{aligned}
+\end{equation}
+```
+**Model 4:** The mean of *rating* appears to vary by year. We thus added
+*year* to our fourth model to correct for this and to improve the
+model's accuracy. *Year* is included as part of
+$\mathbf{Z}\boldsymbol{\gamma}$ given many categories.
+
+**Model 5:** For our final model we added *brand*. Like *year*, the mean
+of *rating* from brand to brand varies significantly. We added *brand*
+to our fifth model based on the same rationale as adding *year,*
+including *brand* as part of $\mathbf{Z}\boldsymbol{\gamma}$.
+
+We considered modeling interactions between *category* and other
+variables. However, the large number of categories would lead to
+excessive complexity in the model for the purposes of this assignment.
+
+# Results
+
+```{r fit models, include=FALSE, warning=FALSE}
+# Fit models
+mod1 <- lm(Rating ~ Torque..Nm.,
+           data=df)
+ 
+mod2 <- lm(Rating ~ Torque..Nm.
+           + Fuel.capacity..lts.
+           + Wheelbase..mm.
+           + Cooling.system
+           + Front.brakes
+           + Transmission.type,
+          data=df)
+
+mod3 <- lm(Rating ~ Torque..Nm.
+           + Fuel.capacity..lts.
+           + Category
+           + Wheelbase..mm.
+           + Cooling.system
+           + Front.brakes
+           + Transmission.type,
+          data=df)
+
+mod4 <- lm(Rating ~ Torque..Nm.
+           + Fuel.capacity..lts.
+           + Category
+           + Wheelbase..mm.
+           + Cooling.system
+           + Front.brakes
+           + Transmission.type
+           + as.factor(Year),
+          data=df)
+
+mod5 <- lm(Rating ~ Torque..Nm.
+           + Fuel.capacity..lts.
+           + Category
+           + Wheelbase..mm.
+           + Cooling.system
+           + Front.brakes
+           + Transmission.type
+           + as.factor(Year)
+           + Brand,
+          data=df)
+
+# Calculate robust standard errors
+se_mod1 <- mod1 %>% vcovHC(type = "HC1") %>% diag() %>% sqrt()
+se_mod2 <- mod2 %>% vcovHC(type = "HC1") %>% diag() %>% sqrt()
+se_mod3 <- mod3 %>% vcovHC(type = "HC1") %>% diag() %>% sqrt()
+se_mod4 <- mod4 %>% vcovHC(type = "HC1") %>% diag() %>% sqrt()
+se_mod5 <- mod5 %>% vcovHC(type = "HC1") %>% diag() %>% sqrt()
+```
+
+```{r regression-table, message=FALSE, echo=FALSE, results='asis', warning=FALSE, tab.cap="Estimated Regressions"}
+stargazer(mod1, mod2, mod3, mod4, mod5,
+          header = FALSE, 
+          type = "latex",
+          title = "Estimated Regressions",
+          dep.var.caption  = "Output Variable: Mean Rating (1-5 scale)",
+          align=TRUE,
+          column.sep.width = "-1.5pt",
+          font.size = "small",
+          se = list(se_mod1, se_mod2, se_mod3, se_mod4, se_mod5),
+          covariate.labels = c(
+            "Torque (Nm)",
+            "Fuel Capacity (Litres)",
+            "Category: Classic",
+            "Category: Custom / cruiser",
+            "Category: Enduro / offroad",
+            "Category: Naked bike",
+            "Category: Scooter",
+            "Category: Sport",
+            "Category: Super motard",
+            "Category: Touring",
+            "Constant"
+            ),
+          omit = c("Year", "Brand", "Dry", "Wheelbase", "Brakes", "Seat", "Cooling", "Front.brakes", "Transmission"),
+          notes.label= "Significance levels",
+          float=TRUE,
+          table.placement="H",
+          omit.stat=c("adj.rsq","f"),
+          add.lines = list(
+            c("Wheelbase (mm)", "", "\\checkmark", "\\checkmark", "\\checkmark ", "\\checkmark"),
+            c("Cooling System", "", "\\checkmark", "\\checkmark", "\\checkmark", "\\checkmark"),
+            c("Front Brakes", "", "\\checkmark", "\\checkmark", "\\checkmark", "\\checkmark"),
+            c("Transmission Type", "", "\\checkmark", "\\checkmark", "\\checkmark", "\\checkmark"),
+            c("Year", "", "", "", "\\checkmark", "\\checkmark"),
+            c("Brand", "", "", "", "", "\\checkmark"),
+            "\\hline"
+            ), 
+          star.cutoffs = c(0.05, 0.01, 0.001)
+          )
+```
+
+Table 1 shows the results of five representative regressions[^2]. The
+R-squared values increase as we go across the models, which indicates
+that the models become increasingly predictive. Across all models, the
+estimated coefficient for our primary X variable, *torque*, was highly
+statistically significant. Point estimates were consistent for the first
+four models at `r mod1$coef[2] %>% sprintf(fmt = '%#.3f')`, and was
+`r mod5$coef[2] %>% sprintf(fmt = '%#.3f')` for model 5. To provide a
+sense of scale, consider a manufacturer which increased the torque of a
+motorcycle by 300 Nm, all else being equal. Applying model 5, the
+motorcycle's rating is expected to increase by
+`r (mod5$coef[2] * 300) %>% signif(2) %>% formatC(format="fg")`.
+
+[^2]: In model 2, wheelbase, cooling system, brakes, transmission type
+    were part of the main model. However, they were pushed down as
+    covariates starting from model 3 as they were not statistically
+    significant. Robust standard errors are shown in parentheses.
+
+Across all models, the coefficient for *fuel capacity* was also highly
+statistically significant. Point estimates ranged from
+`r min(mod2$coef[3], mod3$coef[3], mod4$coef[3], mod5$coef[3]) %>% sprintf(fmt = '%#.2f')`
+to
+`r max(mod2$coef[3], mod3$coef[3], mod4$coef[3], mod5$coef[3]) %>% sprintf(fmt = '%#.3f')`.
+Another example to consider is two motorcycles with fuel capacity
+differing by 12 liters, all else being the same. Applying model 5, the
+rating of the motorcycle with the higher fuel capacity is expected to
+exceed the motorcycle with the lower fuel capacity by
+`r (mod5$coef[3] * 12) %>% signif(2) %>% formatC(format="fg")`.
+
+Most coefficients for *category* indicators were statistically
+significant. An example to consider is the "Enduro / offroad" category.
+Applying model 5, a motorcycle in the "Enduro / offroad" category is
+expected to have
+`r (mod5$coef[6]) %>% signif(2) %>% formatC(format="fg")` lower ratings
+than the baseline category ("All round").
+
+As previously noted, other covariates were included to adjust for
+omitted variable bias. Notably, the coefficients for *wheelbase*,
+*cooling system*, *front brakes*, *transmission type* were not
+statistically significant, as such, estimated coefficients for these
+should not be strictly used to make design decisions if the goal is to
+increase customer approval. We also note that *year* and *brand*, while
+being statistically significant for particular categories, are not
+practically significant as these are not parameters that a manufacturer
+can affect.
+
+From a motorcycle manufacturer's point of view, when deciding which
+specifications to focus on, *torque* and *fuel capacity* seem to affect
+customer approval the most. Since *torque* is highly correlated with
+*power*, *bore*, *stroke* and displacement, these should also be
+included in the list of specifications to be optimized for if the goal
+is higher customer ratings. Manufacturers should also look into focusing
+on "Classic" motorbikes as this category is most likely to lead to the
+highest customer ratings.
+
+# Limitations
+
+Consistent regression estimates require an assumption of independent and
+identically distributed (iid) observations. Motorcycles in the dataset
+belong to various brands, and motorcycles from specific brands may share
+common characteristics, so observations may not be fully independent. We
+partially account for this possibility in the fifth model by including
+*brand* as a covariate. Furthermore, observations may not be strictly
+identically distributed as motorcycles in the dataset were drawn from
+different years. We partially account for this possibility by
+restricting the *year* to 2013 - 22, and by including *year* as a
+covariate in models four and five.
+
+Consistent regression estimates also require that a unique best linear
+predictor describes the population distribution. As shown in Figure
+\@ref(fig:side-by-side-plots)b, there is no visual evidence of
+heavy-tailed distributions. There is also no perfect collinearity as
+correlations between pairs of X variables are all less than one, and no
+variables were dropped when fitting the regressions.
+
+Heteroskedastic error is apparent in Figure
+\@ref(fig:side-by-side-plots)b. This is less of a concern for the Large
+Sample Models used but is nonetheless accounted for by using robust
+standard errors. Additionally, it is unclear whether bikez.com used
+random sampling in choosing which motorcycles to include in its
+database. As such, there may be limitations as to the generalizeability
+of our findings across all motorcycles. Finally, while our models
+identified linear relationships between *rating*. and *torque* and *fuel
+capacity*, these relationships may not necessarily hold for very high
+values of *torque* and *fuel capacity*, particularly as *rating* should
+have a maximal value of 5.
+
+Regarding structural limitations, a potential source of omitted variable
+bias is fuel efficiency, which did not have a corresponding variable in
+our data source. We postulate that *torque* has a negative relationship
+with *fuel efficiency*, and that *fuel efficiency* has a positive
+relationship with *rating*. As such, the direction of bias would be
+negative and towards zero, implying that the true effect of *torque* on
+*rating* is larger than the estimated effect. We do not consider reverse
+causality present, as rating should not cause changes in our X
+variables. We also do not have outcome variables on the right-hand side
+as X variable selection accounted for this (e.g., choosing torque over
+power due to correlation).
+
+# Conclusion
+
+This study estimated the relationship between key motorcycle features
+and customer approval of a motorcycle, proxied by mean ratings. We also
+described and measured how motorcycle category predicts ratings.
+Follow-up models could include interactions between motorcycle
+categories and design features such as torque and fuel capacity, as the
+impact of different motorcycle features on ratings could differ
+depending on the motorcycle category. Follow-up models could also use
+simplified versions of categorical variables which were excluded due to
+excessive distinct categories. Motorcycle manufacturers may want to
+know, for example, whether there are benefits to choosing specific types
+of tires or suspension systems. Future research could also incorporate
+other datasets (e.g., sales data) to provide a more holistic view of
+product success. The ultimate goal of this line of work is to provide
+accurate tools for motorcycle manufacturers to develop motorcycles that
+are more likely to achieve success and reduce uncertainty in the design
+process.

@@ -39,6 +39,12 @@ To replicate the analysis:
 
 Future research could explore the interaction between motorcycle categories and key design features, incorporate simplified versions of currently excluded categorical variables, and utilize additional datasets like sales data for a more comprehensive understanding of motorcycle success factors.
 
+## Contributors
+- Gary Kong
+- Amina Alavi
+- Vernon Robinson
+- Elizabeth Willard
+
 ## Project Organization
 
     ├── LICENSE
